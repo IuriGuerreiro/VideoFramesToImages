@@ -1,0 +1,5 @@
+# No Python dependencies required
+# FFmpeg must be installed separately:
+# Ubuntu/Debian: sudo apt-get install ffmpeg
+# macOS: brew install ffmpeg
+# Windows: choco install ffmpeg or download from https://ffmpeg.org/download.html
