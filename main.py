@@ -199,10 +199,53 @@ class VideoFrameExtractor:
             return False
 
 
+def find_video_files(folder_path: Path) -> list:
+    """
+    Find all video files in a folder.
+
+    Args:
+        folder_path: Path to the folder to search
+
+    Returns:
+        List of video file paths
+    """
+    video_extensions = {
+        ".mp4",
+        ".mov",
+        ".avi",
+        ".mkv",
+        ".webm",
+        ".flv",
+        ".wmv",
+        ".m4v",
+        ".mpg",
+        ".mpeg",
+        ".3gp",
+        ".m2ts",
+        ".mts",
+        ".ts",
+        ".vob",
+        ".f4v",
+        ".asf",
+        ".rm",
+        ".rmvb",
+        ".ogv",
+        ".mxf",
+        ".gif",
+    }
+
+    video_files = []
+    for file in folder_path.rglob("*"):
+        if file.is_file() and file.suffix.lower() in video_extensions:
+            video_files.append(file)
+
+    return sorted(video_files)
+
+
 def main():
     """Main entry point."""
     parser = argparse.ArgumentParser(
-        description="Extract frames from a video file and save as images",
+        description="Extract frames from a video file or all videos in a folder and save as images",
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
 Examples:
@@ -211,10 +254,16 @@ Examples:
   python main.py video.mp4 output/ --fps 1
   python main.py video.mp4 output/ --format jpg
   python main.py video.mov output/ --fps 15 --format webp
+  
+Folder input (processes all videos):
+  python main.py videos_folder/ output/
+  python main.py videos_folder/ output/ --fps 10 --format jpg
         """,
     )
 
-    parser.add_argument("input", help="Path to input video file")
+    parser.add_argument(
+        "input", help="Path to input video file or folder containing videos"
+    )
 
     parser.add_argument("output", help="Output directory for extracted frames")
 
@@ -239,16 +288,75 @@ Examples:
     args = parser.parse_args()
 
     try:
-        extractor = VideoFrameExtractor(
-            video_path=args.input,
-            output_dir=args.output,
-            frame_rate=args.fps,
-            format=args.format,
-        )
+        input_path = Path(args.input).expanduser().resolve()
+        output_base = Path(args.output).expanduser().resolve()
 
-        success = extractor.extract_frames(verbose=not args.quiet)
+        # Check if input is a folder or a file
+        if input_path.is_dir():
+            # Process all videos in the folder
+            video_files = find_video_files(input_path)
 
-        sys.exit(0 if success else 1)
+            if not video_files:
+                print(f"No video files found in: {input_path}")
+                sys.exit(1)
+
+            if not args.quiet:
+                print(f"Found {len(video_files)} video file(s) in {input_path.name}/")
+
+            failed_videos = []
+
+            for idx, video_file in enumerate(video_files, 1):
+                if not args.quiet:
+                    print(f"\n[{idx}/{len(video_files)}] Processing: {video_file.name}")
+
+                # Create subdirectory for each video using video filename (without extension)
+                video_name = video_file.stem
+                video_output_dir = output_base / video_name
+
+                try:
+                    extractor = VideoFrameExtractor(
+                        video_path=str(video_file),
+                        output_dir=str(video_output_dir),
+                        frame_rate=args.fps,
+                        format=args.format,
+                    )
+
+                    success = extractor.extract_frames(verbose=not args.quiet)
+
+                    if not success:
+                        failed_videos.append(video_file.name)
+
+                except (FileNotFoundError, ValueError, RuntimeError) as e:
+                    print(f"Error processing {video_file.name}: {e}", file=sys.stderr)
+                    failed_videos.append(video_file.name)
+
+            # Summary
+            if not args.quiet:
+                successful = len(video_files) - len(failed_videos)
+                print(f"\n{'=' * 50}")
+                print(f"Batch processing complete!")
+                print(f"Successfully processed: {successful}/{len(video_files)} videos")
+                if failed_videos:
+                    print(f"Failed videos: {', '.join(failed_videos)}")
+                print(f"Output directory: {output_base.absolute()}")
+
+            sys.exit(0 if not failed_videos else 1)
+
+        elif input_path.is_file():
+            # Process single video file
+            extractor = VideoFrameExtractor(
+                video_path=args.input,
+                output_dir=args.output,
+                frame_rate=args.fps,
+                format=args.format,
+            )
+
+            success = extractor.extract_frames(verbose=not args.quiet)
+
+            sys.exit(0 if success else 1)
+
+        else:
+            raise FileNotFoundError(f"Input path not found: {input_path}")
 
     except (FileNotFoundError, ValueError, RuntimeError) as e:
         print(f"Error: {e}", file=sys.stderr)
